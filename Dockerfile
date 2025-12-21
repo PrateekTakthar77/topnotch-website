@@ -1,12 +1,23 @@
 FROM php:8.2-fpm
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git curl zip unzip libzip-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl zip unzip netcat-openbsd \
+    libzip-dev \
     libpng-dev libjpeg-dev libfreetype6-dev \
     libonig-dev libxml2-dev \
-    netcat-openbsd \
-    && docker-php-ext-install pdo pdo_mysql mbstring zip exif pcntl bcmath gd
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install \
+    pdo \
+    pdo_mysql \
+    mbstring \
+    zip \
+    exif \
+    pcntl \
+    bcmath \
+    gd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -14,22 +25,26 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
-# Copy project files
+# Copy entire project first
 COPY . .
 
-# Set permissions during build
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/public/uploads \
-    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache /var/www/public/uploads
+# Install dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Expose port 9000 (php-fpm)
-EXPOSE 9000
+# Copy rest of the application
+COPY . .
 
-# Copy entrypoint script
+# Permissions
+RUN chown -R www-data:www-data \
+    storage bootstrap/cache public/uploads \
+    && chmod -R 775 \
+    storage bootstrap/cache public/uploads
+
+# Copy entrypoint
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Set entrypoint
-ENTRYPOINT ["entrypoint.sh"]
+EXPOSE 9000
 
-# Set default command to start php-fpm
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["php-fpm"]
